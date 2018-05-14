@@ -168,6 +168,9 @@ parser.add_argument('-bn', action ='store_true',
 args = parser.parse_args()
 args.start_epoch = 0
 best_loss = 10
+#initialize some variables
+train_loss = []
+val_loss = []
 
 # use same seed for testing purpose
 torch.manual_seed(999)
@@ -250,6 +253,8 @@ if args.resume:
         best_loss = checkpoint['best_loss']
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
+        train_loss = checkpoint['train_loss']
+        val_loss = checkpoint['val_loss']
         # scheduler.last_epoch = args.start_epoch
         print("=> loaded checkpoint '{}' (epoch {})"
               .format(args.resume, checkpoint['epoch']))
@@ -288,18 +293,22 @@ if args.evaluate:
     print " avg loss: " + str(eval(valloader, model, criterion, True))
 else:
     print "***** Start Training *****"
+    # val loss and train loss are initialized with 0
     for epoch in range(args.start_epoch, args.epochs):
         start_time = time.time()
-        train_loss = train(trainloader, model, criterion, optimizer, epoch)
-        val_loss = eval(valloader, model, criterion, False)
+        # train_loss = train(trainloader, model, criterion, optimizer, epoch)
+        # val_loss = eval(valloader, model, criterion, False)
+
+        train_loss.append(train(trainloader, model, criterion, optimizer, epoch))
+        val_loss.append(eval(valloader, model, criterion, False))
         end_time = time.time()
 
         print('Epoch [%5d] train_loss: %.4f val_loss: %.4f loop time: %.5f' %
-              (epoch + 1, train_loss, val_loss, end_time - start_time))
+              (epoch + 1, train_loss[epoch], val_loss[epoch], end_time - start_time))
         if args.txt:
             with open("Info_lr_" + str(args.lr) + "_wd_" + str(args.weight_decay) + ".txt", "a") as myfile:
                 myfile.write('Epoche [%5d] train_loss: %.4f val_loss: %.4f loop time: %.5f' %
-                             (epoch + 1, train_loss, val_loss, end_time - start_time))
+                             (epoch + 1, train_loss[epoch], val_loss[epoch], end_time - start_time))
                 myfile.write('\n')
                 myfile.close()
 
@@ -315,17 +324,20 @@ else:
         #trainloader.dataset.rand_rotate = random.random() < 0.5
         #trainloader.dataset.angle = random.uniform(-180, 180)
 
-        #save best loss
-        is_best_loss = val_loss < best_loss
-        best_loss = min(val_loss, best_loss)
+
+        # save best loss
+        is_best_loss = val_loss[epoch] < best_loss
+        best_loss = min(val_loss[epoch], best_loss)
         # save model
         if (epoch + 1) % args.epochsave == 0:
             save_checkpoint({
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
                 'best_loss': best_loss,
+                'train_loss': train_loss,
+                'val_loss': val_loss,
                 'optimizer': optimizer.state_dict(),
-            }, is_best_loss, filename='checkpoint.'+ str(args.lr) + "wd" + str(args.weight_decay) + '.pth.tar')
+            }, is_best_loss, filename='checkpoint.' + str(args.lr) + "wd" + str(args.weight_decay) + '.pth.tar')
 print "*****   End  Programm   *****"
 
 
