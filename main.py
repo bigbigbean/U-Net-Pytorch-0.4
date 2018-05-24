@@ -29,6 +29,9 @@ def train(trainloader, model, criterion, optimizer, epoch):
     loss_sum = 0
     for i, data in enumerate(trainloader):
 
+        # Forces the batch to use 30 samples and reduce overfitting when shuffle = True
+        if i == 30:
+            break
         # get train and label data
         train, label = data
         # put on gpu or cpu
@@ -43,7 +46,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
         # I cut the channel info for it to work, because it is only a 2d image.
         # As an alternative, one could add 1 channel for class in train, than label does not need any change
         # label normally looks like: ( minibatchsize, 1, width, height )
-        label = label.view(label.size(0), label.size(2), label.size(3))
+        #label = label.view(label.size(1), label.size(2), label.size(3))
 
         # zero the parameter gradients
         optimizer.zero_grad()
@@ -53,7 +56,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
         # to maintain the original size of the image
         outputs = model(train, padding=args.pad)
         # the log is needed to calculate the crossentropy
-        loss = criterion(torch.log(outputs), label)
+        loss = criterion(torch.log(outputs), label) / (512*512)
         loss.backward()
 
         optimizer.step()
@@ -85,6 +88,8 @@ def eval(valloader, model, criterion, save_image):
         # put on gpu or cpu
         val = val.to(device)
         # label is of type TensorLong
+
+
         label = label.to(device)
 
         # for the CrossEntropyLoss:
@@ -94,11 +99,11 @@ def eval(valloader, model, criterion, save_image):
         # i cut the channel info for it to work, because it is only a 2d image.
         # as an alternative, one could add 1 channel for class in train, than label does not need any change
         # label normally looks like: ( minibatchsize, 1, width, height )
-        label = label.view(label.size(0), label.size(2), label.size(3))
-
+        #label = label.view(label.size(1), label.size(2), label.size(3))
+        labelx = label
         # forward + backward + optimize
         outputs = model(val, padding=args.pad)
-        loss = criterion(torch.log(outputs), label)
+        loss = criterion(torch.log(outputs), label) / (512*512)
         running_loss = loss.item()
         loss_sum = loss_sum + running_loss
 
@@ -117,14 +122,16 @@ def save_images(outputs, directory, epoch, index):
     y = outputs[0][1][:][:].cpu().detach().numpy()
 
     # convert image to save it properly
-    x = (x * 255).astype(np.uint8)
-    y = (y * 255).astype(np.uint8)
+    # for visibility in grayscale
+    # for competition comment this 2 lines out
+    # x = (x * 255).astype(np.uint8)
+    # y = (y * 255).astype(np.uint8)
     x = Image.fromarray(x)
     if not os.path.exists(directory):
         os.makedirs(directory)
-    x.save(directory + 'class1_' + str(epoch) + '_image_' + str(index) + '.jpg')
+    x.save(directory + 'class1_' + str(epoch) + '_image_' + str(index) + '.tif')
     y = Image.fromarray(y)
-    y.save(directory + 'class2_' + str(epoch) + '_image_' + str(index) + '.jpg')
+    y.save(directory + 'class2_' + str(epoch) + '_image_' + str(index) + '.tif')
 
 
 # Parameters can be set at command-line
@@ -137,7 +144,7 @@ parser.add_argument('data', metavar='dataset', choices=['ISBI2012', 'CTC2015'],
 parser.add_argument('-mbs', '--mini-batch-size', dest='minibatchsize', type=int,
                     metavar='N', default=1, help='mini batch size (default: 1). '
                                                  'For 8k memory on gpu, minibatchsize of 2-3 possible')
-parser.add_argument('-j', '--workers', default=2, type=int, metavar='N',
+parser.add_argument('-j', '--workers', default=3, type=int, metavar='N',
                     help='number of data loading workers (default: 2)')
 parser.add_argument('--epochs', default=20, type=int, metavar='N',
                     help='number of total epochs to run (default: 20)')
@@ -171,10 +178,11 @@ best_loss = 10
 #initialize some variables
 train_loss = []
 val_loss = []
+torch.backends.cudnn.deterministic = True
 
 # use same seed for testing purpose
-torch.manual_seed(999)
-random.seed(999)
+# torch.manual_seed(999)
+# random.seed(999)
 
 print "***** Starting Programm *****"
 
@@ -207,24 +215,25 @@ if device.type == "cuda":
 # If you want to use the CrossEntropyLoss(), remove the softmax layer, and  the torch.log() at the loss
 
 # criterion = nn.CrossEntropyLoss().to(device)
-criterion = nn.NLLLoss().to(device)
+# criterion = nn.NLLLoss().to(device)
+criterion = nn.KLDivLoss(size_average=False).to(device)
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
 # Reduce learning rate when a metric has stopped improving, needs to be activated in epoch too
-# scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True)
+#scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=50, verbose=True)
 
 # load the ISBI 2012 training data
 # the CTC2015 Datasetloader is not finished yet
 # The length of the Dataset has to be set by yourself
-# self, gloob_dir_train, gloob_dir_label, length, is_pad, eval, totensor):
+# gloob_dir_train, gloob_dir_label, length, is_pad, eval, totensor):
 if args.data == "ISBI2012":
     trainset = ISBI.ISBIDataset(
         "./ISBI 2012/Train-Volume/train-volume-*.tif", "./ISBI 2012/Train-Labels/train-labels-*.tif",
-        length=408, is_pad=args.pad, eval=False, totensor=True)
+        length=720, is_pad=args.pad, eval=False, totensor=True)
 
     valset = ISBI.ISBIDataset(
         "./ISBI 2012/Val-Volume/train-volume-*.tif", "./ISBI 2012/Val-Labels/train-labels-*.tif",
-        length=102, is_pad=args.pad, eval=True, totensor=True)
+        length=10, is_pad=args.pad, eval=True, totensor=True)
 elif args.data == "CTC2015":
     trainset = ISBI.ISBIDataset(
         "./ISBI 2012/Train-Volume/train-volume-*.tif", "./ISBI 2012/Train-Labels/train-labels-*.tif",
@@ -296,8 +305,6 @@ else:
     # val loss and train loss are initialized with 0
     for epoch in range(args.start_epoch, args.epochs):
         start_time = time.time()
-        # train_loss = train(trainloader, model, criterion, optimizer, epoch)
-        # val_loss = eval(valloader, model, criterion, False)
 
         train_loss.append(train(trainloader, model, criterion, optimizer, epoch))
         val_loss.append(eval(valloader, model, criterion, False))
@@ -313,13 +320,13 @@ else:
                 myfile.close()
 
         # see info at criterion above
-        # scheduler.step(val_loss)
+        #scheduler.step(val_loss)
         # Data Augmentation
         # 50% change to flip or random rotate, same for whole batch
         # change every epoch
         # starting epoche with no flipping and rotation
-        trainloader.dataset.rand_vflip = random.random() < 0.5
-        trainloader.dataset.rand_hflip = random.random() < 0.5
+        #trainloader.dataset.rand_vflip = random.random() < 0.5
+        #trainloader.dataset.rand_hflip = random.random() < 0.5
         #rotate image
         #trainloader.dataset.rand_rotate = random.random() < 0.5
         #trainloader.dataset.angle = random.uniform(-180, 180)
@@ -338,7 +345,28 @@ else:
                 'val_loss': val_loss,
                 'optimizer': optimizer.state_dict(),
             }, is_best_loss, filename='checkpoint.' + str(args.lr) + "wd" + str(args.weight_decay) + '.pth.tar')
-print "*****   End  Programm   *****"
+
+
+
+        # if is_best_loss:
+        #     save_checkpoint({
+        #         'epoch': epoch + 1,
+        #         'state_dict': model.state_dict(),
+        #         'best_loss': best_loss,
+        #         'train_loss': train_loss,
+        #         'val_loss': val_loss,
+        #         'optimizer': optimizer.state_dict(),
+        #     }, is_best_loss, filename='checkpoint.' + str(args.lr) + "wd" + str(args.weight_decay) + '.pth.tar')
+if not args.evaluate:
+    save_checkpoint({
+                    'epoch': epoch + 1,
+                    'state_dict': model.state_dict(),
+                    'best_loss': best_loss,
+                    'train_loss': train_loss,
+                    'val_loss': val_loss,
+                    'optimizer': optimizer.state_dict(),
+                }, is_best_loss, filename='checkpoint.' + str(args.lr) + "wd" + str(args.weight_decay) + '.pth.tar')
+    print "*****   End  Programm   *****"
 
 
 
