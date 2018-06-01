@@ -1,14 +1,12 @@
 import glob
 from torch.utils import data
 from PIL import Image
-import torch
 import torchvision
 import numpy as np
 import random
 from scipy.ndimage.filters import gaussian_filter
 from scipy.ndimage.interpolation import map_coordinates
 import datetime
-import PIL.ImageOps
 
 class ISBIDataset(data.Dataset):
 
@@ -89,7 +87,6 @@ class ISBIDataset(data.Dataset):
                 #not normalized
                 indices = [np.reshape(x + dxconv, (-1, 1)), np.reshape(y + dyconv, (-1, 1))]
 
-                #result = np.empty_like(timg)
                 trainimg = Image.fromarray(map_coordinates(timg, indices, order=1, mode='mirror').reshape((timg.shape[0], timg.shape[1])))
                 trainlabel = map_coordinates(limg, indices, order=1, mode='mirror').reshape((limg.shape[0], limg.shape[1]))
 
@@ -117,11 +114,9 @@ class ISBIDataset(data.Dataset):
         if not self.is_pad:
             trainlabel = self.crop_nopad(trainlabel)
 
-        inverse = PIL.ImageOps.invert(trainlabel)
         if self.totensor:
             # test if NLL needs long
-            trainlabel = self.changetotensor(trainlabel)
+            trainlabel = self.changetotensor(trainlabel).long()
             trainimg = self.changetotensor(trainimg)
-            inverse = self.changetotensor(inverse)
 
-        return trainimg, torch.cat((inverse, trainlabel))
+        return trainimg, trainlabel

@@ -46,7 +46,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
         # I cut the channel info for it to work, because it is only a 2d image.
         # As an alternative, one could add 1 channel for class in train, than label does not need any change
         # label normally looks like: ( minibatchsize, 1, width, height )
-        #label = label.view(label.size(1), label.size(2), label.size(3))
+        label = label.view(label.size(0), label.size(2), label.size(3))
 
         # zero the parameter gradients
         optimizer.zero_grad()
@@ -56,7 +56,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
         # to maintain the original size of the image
         outputs = model(train, padding=args.pad)
         # the log is needed to calculate the crossentropy
-        loss = criterion(torch.log(outputs), label) / (512*512)
+        loss = criterion(torch.log(outputs), label)
         loss.backward()
 
         optimizer.step()
@@ -99,11 +99,10 @@ def eval(valloader, model, criterion, save_image):
         # i cut the channel info for it to work, because it is only a 2d image.
         # as an alternative, one could add 1 channel for class in train, than label does not need any change
         # label normally looks like: ( minibatchsize, 1, width, height )
-        #label = label.view(label.size(1), label.size(2), label.size(3))
-        labelx = label
+        label = label.view(label.size(0), label.size(2), label.size(3))
         # forward + backward + optimize
         outputs = model(val, padding=args.pad)
-        loss = criterion(torch.log(outputs), label) / (512*512)
+        loss = criterion(torch.log(outputs), label)
         running_loss = loss.item()
         loss_sum = loss_sum + running_loss
 
@@ -124,8 +123,10 @@ def save_images(outputs, directory, epoch, index):
     # convert image to save it properly
     # for visibility in grayscale
     # for competition comment this 2 lines out
-    # x = (x * 255).astype(np.uint8)
-    # y = (y * 255).astype(np.uint8)
+    # probabilities in the range of 0-1
+
+    x = (x * 255).astype(np.uint8)
+    y = (y * 255).astype(np.uint8)
     x = Image.fromarray(x)
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -215,8 +216,7 @@ if device.type == "cuda":
 # If you want to use the CrossEntropyLoss(), remove the softmax layer, and  the torch.log() at the loss
 
 # criterion = nn.CrossEntropyLoss().to(device)
-# criterion = nn.NLLLoss().to(device)
-criterion = nn.KLDivLoss(size_average=False).to(device)
+criterion = nn.NLLLoss(weight=torch.tensor([0.75, 0.15])).to(device)
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
 # Reduce learning rate when a metric has stopped improving, needs to be activated in epoch too
